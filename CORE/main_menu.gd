@@ -4,8 +4,8 @@ signal load_game_requested
 
 # Put your GitHub repository URL here, for example:
 # https://github.com/YourName/YourGameDLC
-@export var GITHUB_REPO_URL: String = ""
-@export var GITHUB_DLC_ROOT_PATH: String = ""
+@export var GITHUB_REPO_URL: String = "https://github.com/FrolicOtter/GohstKitchen"
+@export var GITHUB_DLC_ROOT_PATH: String = "DLC"
 @export var DLC_INSTALL_DIR: String = "user://DLC"
 @export var MAIN_PAGE_SCENE_PATH: String = "main_menu_page.tscn"
 @export var DLC_PAGE_SCENE_PATH: String = "dlc_menu_page.tscn"
@@ -127,9 +127,22 @@ func _normalize_dlc_manifest(manifest: Dictionary, folder_path: String) -> Dicti
 		"name": str(manifest.get("name", folder_path.get_file())),
 		"description": str(manifest.get("description", "No description provided.")),
 		"version": _get_manifest_version(manifest),
+		"upcoming": _get_manifest_bool(manifest, "upcoming"),
 		"dependencies": _get_manifest_string_array(manifest, "dependencies"),
 		"pck_files": _get_manifest_pck_files(manifest),
 	}
+
+
+func _get_manifest_bool(manifest: Dictionary, field_name: String) -> bool:
+	var raw = manifest.get(field_name, false)
+	if typeof(raw) == TYPE_BOOL:
+		return bool(raw)
+	if typeof(raw) == TYPE_STRING:
+		var clean := str(raw).strip_edges().to_lower()
+		return clean == "true" or clean == "yes" or clean == "upcoming"
+	if typeof(raw) == TYPE_INT or typeof(raw) == TYPE_FLOAT:
+		return float(raw) != 0.0
+	return false
 
 
 func _get_manifest_string_array(manifest: Dictionary, field_name: String) -> Array[String]:
@@ -470,7 +483,16 @@ func _create_dlc_row(dlc: Dictionary, selectable: bool) -> Control:
 	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(name)
 
-	if selectable:
+	if bool(dlc.get("upcoming", false)):
+		var upcoming_label := Label.new()
+		upcoming_label.text = "Upcoming"
+		upcoming_label.custom_minimum_size = Vector2(96, 34)
+		upcoming_label.add_theme_font_size_override("font_size", 18)
+		upcoming_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		upcoming_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		upcoming_label.modulate = Color(0.95, 0.84, 0.35)
+		header.add_child(upcoming_label)
+	elif selectable:
 		var select_button := _create_small_button("Select")
 		select_button.custom_minimum_size = Vector2(96, 34)
 		select_button.pressed.connect(_select_available_dlc.bind(dlc))
@@ -486,6 +508,13 @@ func _create_dlc_row(dlc: Dictionary, selectable: bool) -> Control:
 
 
 func _select_available_dlc(dlc: Dictionary) -> void:
+	if bool(dlc.get("upcoming", false)):
+		_selected_available_dlc.clear()
+		_set_status("%s is upcoming and cannot be downloaded yet." % dlc.get("name", "DLC"))
+		if _download_button != null:
+			_download_button.disabled = true
+		return
+
 	_selected_available_dlc = dlc.duplicate(true)
 	_set_status("Selected %s." % dlc.get("name", "DLC"))
 	if _download_button != null:
@@ -653,6 +682,9 @@ func _url_encode_path(path: String) -> String:
 func _download_selected_dlc() -> void:
 	if _selected_available_dlc.is_empty():
 		_set_status("Choose an available DLC first.")
+		return
+	if bool(_selected_available_dlc.get("upcoming", false)):
+		_set_status("%s is upcoming and cannot be downloaded yet." % _selected_available_dlc.get("name", "DLC"))
 		return
 
 	if _github_owner.is_empty() or _github_repo.is_empty():

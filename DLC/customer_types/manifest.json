@@ -1,0 +1,8 @@
+{
+  "name": "Customer Types",
+  "description": "Allows for many ways to earn customers such as personal website and mobile order apps. Also adds in customer satisfaction and restraunt reviews.",
+  "version": "upcoming",
+  "upcoming": true,
+  "dependencies": [],
+  "pck_files": []
+}
