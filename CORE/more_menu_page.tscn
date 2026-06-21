@@ -127,7 +127,7 @@ theme_override_styles/pressed = SubResource("StyleBoxTexture_button_pressed")
 theme_override_styles/disabled = SubResource("StyleBoxTexture_button_normal")
 text = "Gift Info"
 
-[node name="TutorialButton" type="Button" parent="RootMargin/Root/Frame/MenuCenter/Stack"]
+[node name="ManageDLCButton" type="Button" parent="RootMargin/Root/Frame/MenuCenter/Stack"]
 custom_minimum_size = Vector2(280, 58)
 layout_mode = 2
 theme_override_colors/font_color = Color(0, 0, 0, 1)
@@ -140,4 +140,4 @@ theme_override_styles/normal = SubResource("StyleBoxTexture_button_normal")
 theme_override_styles/hover = SubResource("StyleBoxTexture_button_hover")
 theme_override_styles/pressed = SubResource("StyleBoxTexture_button_pressed")
 theme_override_styles/disabled = SubResource("StyleBoxTexture_button_normal")
-text = "Tutorial"
+text = "Manage DLC"

@@ -11,6 +11,7 @@ const FOOD_ITEM_STATUS_EXPIRED := "expired"
 const FOOD_STATUS_NORMAL_COLOR := Color(0.2, 0.95, 0.35, 1.0)
 const FOOD_STATUS_COOKED_COLOR := Color(1.0, 0.08, 0.04, 1.0)
 const FOOD_STATUS_SPOILED_COLOR := Color(0.68, 0.18, 1.0, 1.0)
+const COIN_FONT_SIZE := 28
 
 var held_frame: int = -1
 var slot_icon: Sprite2D
@@ -65,9 +66,11 @@ func create_coin_display() -> void:
 
 	coin_label = Label.new()
 	coin_label.name = "coin_label"
-	coin_label.position = Vector2(8.0, 86.0)
+	coin_label.position = Vector2(8.0, 78.0)
 	coin_label.text = "Coins: 0"
-	coin_label.add_theme_font_size_override("font_size", 10)
+	coin_label.add_theme_font_size_override("font_size", COIN_FONT_SIZE)
+	coin_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	coin_label.add_theme_constant_override("outline_size", 4)
 	add_child(coin_label)
 
 
@@ -79,12 +82,15 @@ func set_item(frame: int) -> void:
 	set_item_state(frame, -1.0, -1.0, false)
 
 
-func set_item_state(frame: int, prep_progress: float, oven_progress: float, is_spoiled: bool) -> void:
+func set_item_state(frame: int, prep_progress: float, oven_progress: float, is_spoiled: bool, cut_status: String = "") -> void:
 	held_frame = frame
 	var food_status := _get_food_status_from_state(oven_progress, is_spoiled)
+	var display_cut_status := cut_status
+	if display_cut_status.is_empty() and prep_progress >= 100.0:
+		display_cut_status = CUT_STATUS_CUT
 
 	if slot_icon:
-		slot_icon.texture = _make_icon_texture(FoodIconRules.display_frame(frame, food_status))
+		slot_icon.texture = _make_icon_texture(FoodIconRules.display_frame(frame, food_status, display_cut_status))
 		slot_icon.show()
 
 	if status_icon:

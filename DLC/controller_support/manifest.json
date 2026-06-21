@@ -1,0 +1,8 @@
+{
+	"dependencies": [],
+	"description": "Adds controller-friendly input support for menus and kitchen gameplay.",
+	"name": "Controller Support",
+	"pck_files": [],
+	"upcoming": true,
+	"version": "upcoming"
+}

@@ -3,9 +3,6 @@ extends Node2D
 @export var selector_scene: PackedScene
 @export var food_scene: PackedScene
 
-# The exact frame numbers of the items you want in the fridge
-@export var fridge_menu: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 81, 99, 147]
-
 # Position offsets to snap the UI above the fridge
 @export var fridge_position: Vector2 = Vector2(100, 100)
 @export var selector_offset: Vector2 = Vector2(0, -32)
@@ -16,7 +13,12 @@ extends Node2D
 @export var hud_node: Node
 
 const WRONG_ORDER_TEXTURE_PATH := "Complete_UI_Essential_Pack_Free/01_Flat_Theme/Sprites/UI_Flat_IconCross01a.png"
-const SAVE_STATE_PATH := "user://save_state.json"
+const SAVE_STATE_FILE_NAME := "save_state.json"
+const MAIN_MENU_SCENE_PATH := "main_menu.tscn"
+const UI_BUTTON_NORMAL_PATH := "Complete_UI_Essential_Pack_Free/01_Flat_Theme/Sprites/UI_Flat_Button01a_1.png"
+const UI_BUTTON_HOVER_PATH := "Complete_UI_Essential_Pack_Free/01_Flat_Theme/Sprites/UI_Flat_Button01a_2.png"
+const UI_BUTTON_PRESSED_PATH := "Complete_UI_Essential_Pack_Free/01_Flat_Theme/Sprites/UI_Flat_Button01a_3.png"
+const UI_FRAME_PATH := "Complete_UI_Essential_Pack_Free/01_Flat_Theme/Sprites/UI_Flat_Frame02a.png"
 
 # --- NEW: Capacity and Timer Settings ---
 @export var max_item_count: int = 3
@@ -34,11 +36,12 @@ const SAVE_STATE_PATH := "user://save_state.json"
 @export var order_reward_min: int = 5
 @export var order_reward_abs_max: int = 100
 @export var order_reward_time_limit: float = 60.0
-@export var meat_frames: Array[int] = [81, 99, 147]
 
 var food_items: Array = []
 var item_counts: Array[int] = [] 
+var fridge_menu: Array[int] = []
 var current_index: int = 0
+var item_restocking: Array[bool] = []
 
 var active_selector: Node2D 
 var active_storage_selector: Node2D
@@ -75,6 +78,8 @@ var coins: int = 0
 var order_rng := RandomNumberGenerator.new()
 var wrong_order_icon: Sprite2D
 var wrong_order_texture: Texture2D
+var pause_menu_layer: CanvasLayer
+var is_pause_menu_open := false
 
 const COUNTER_ATLAS_Y := 12
 const COUNTER_ATLAS_MIN_X := 8
@@ -125,6 +130,8 @@ const BANNED_COUNTER_CELLS: Array[Vector2i] = [
 ]
 
 func _ready():
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	fridge_menu = FoodIconRules.FRIDGE_MENU.duplicate()
 	order_rng.randomize()
 	load_save_state()
 	wrong_order_texture = load(CorePaths.path(WRONG_ORDER_TEXTURE_PATH)) as Texture2D
@@ -158,16 +165,21 @@ func _ready():
 		
 		new_food.hide()
 		food_items.append(new_food)
-		item_counts.append(max_item_count) # Start fully stocked
+		item_counts.append(1)
+		item_restocking.append(false)
 
 	if food_items.size() > 0:
 		update_labels()
 		update_visuals()
 
 	update_external_storage_areas()
+	create_pause_menu()
 
 
 func _process(delta):
+	if is_pause_menu_open:
+		return
+
 	update_food_state_timers(delta)
 	update_order_timer(delta)
 
@@ -209,7 +221,22 @@ func _process(delta):
 
 
 func _unhandled_input(event):
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if is_pause_menu_open:
+			return
+		if handle_inventory_click():
+			get_viewport().set_input_as_handled()
+			return
+
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE:
+			toggle_pause_menu()
+			get_viewport().set_input_as_handled()
+			return
+
+		if is_pause_menu_open:
+			return
+
 		var index_changed = false
 
 		if is_player_in_zone and event.keycode == KEY_Q and not food_items.is_empty():
@@ -238,6 +265,112 @@ func _unhandled_input(event):
 
 		if index_changed:
 			update_visuals()
+
+
+func create_pause_menu() -> void:
+	if pause_menu_layer:
+		return
+
+	pause_menu_layer = CanvasLayer.new()
+	pause_menu_layer.name = "PauseMenu"
+	pause_menu_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	pause_menu_layer.visible = false
+	add_child(pause_menu_layer)
+
+	var dim := ColorRect.new()
+	dim.name = "Dim"
+	dim.color = Color(0.0, 0.0, 0.0, 0.55)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause_menu_layer.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.name = "Center"
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause_menu_layer.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.name = "Panel"
+	panel.custom_minimum_size = Vector2(320, 230)
+	panel.add_theme_stylebox_override("panel", create_ui_texture_style(UI_FRAME_PATH))
+	center.add_child(panel)
+
+	var stack := VBoxContainer.new()
+	stack.name = "Stack"
+	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_theme_constant_override("separation", 16)
+	panel.add_child(stack)
+
+	var title := Label.new()
+	title.text = "Paused"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 34)
+	stack.add_child(title)
+
+	var resume_button := create_pause_button("Resume")
+	resume_button.pressed.connect(close_pause_menu)
+	stack.add_child(resume_button)
+
+	var exit_button := create_pause_button("Exit to Main Menu")
+	exit_button.pressed.connect(exit_to_main_menu)
+	stack.add_child(exit_button)
+
+
+func create_pause_button(text: String) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(240, 54)
+	button.add_theme_font_size_override("font_size", 22)
+	button.add_theme_color_override("font_color", Color.BLACK)
+	button.add_theme_color_override("font_hover_color", Color.BLACK)
+	button.add_theme_color_override("font_pressed_color", Color.BLACK)
+	button.add_theme_color_override("font_focus_color", Color.BLACK)
+	button.add_theme_color_override("font_disabled_color", Color.BLACK)
+	button.add_theme_stylebox_override("normal", create_ui_texture_style(UI_BUTTON_NORMAL_PATH))
+	button.add_theme_stylebox_override("hover", create_ui_texture_style(UI_BUTTON_HOVER_PATH))
+	button.add_theme_stylebox_override("pressed", create_ui_texture_style(UI_BUTTON_PRESSED_PATH))
+	button.add_theme_stylebox_override("disabled", create_ui_texture_style(UI_BUTTON_NORMAL_PATH))
+	return button
+
+
+func create_ui_texture_style(texture_path: String) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = load(CorePaths.path(texture_path)) as Texture2D
+	style.texture_margin_left = 6.0
+	style.texture_margin_top = 6.0
+	style.texture_margin_right = 6.0
+	style.texture_margin_bottom = 6.0
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	return style
+
+
+func toggle_pause_menu() -> void:
+	if is_pause_menu_open:
+		close_pause_menu()
+	else:
+		open_pause_menu()
+
+
+func open_pause_menu() -> void:
+	is_pause_menu_open = true
+	if pause_menu_layer:
+		pause_menu_layer.visible = true
+	get_tree().paused = true
+
+
+func close_pause_menu() -> void:
+	load_save_state()
+	update_coin_hud()
+	is_pause_menu_open = false
+	if pause_menu_layer:
+		pause_menu_layer.visible = false
+	get_tree().paused = false
+
+
+func exit_to_main_menu() -> void:
+	save_state()
+	get_tree().paused = false
+	get_tree().change_scene_to_file(CorePaths.path(MAIN_MENU_SCENE_PATH))
 
 
 func update_visuals():
@@ -332,14 +465,29 @@ func get_selector_grid_columns(selector: Node2D, center_position: Vector2, slot_
 
 	var visible_rect: Rect2 = get_visible_world_rect()
 	var columns: int = maxi(EXTERNAL_MIN_COLUMNS, ceili(sqrt(float(slot_count))))
-	while columns < slot_count:
+	var best_columns: int = columns
+	var best_overflow := INF
+	while columns <= slot_count:
 		var rows: int = ceili(float(slot_count) / float(columns))
 		var start_position: Vector2 = get_selector_grid_start_position(center_position, columns, rows, slot_step)
 		var grid_rect: Rect2 = get_selector_grid_rect(selector, start_position, columns, rows, slot_step)
-		if grid_rect.position.y >= visible_rect.position.y + SELECTOR_SCREEN_PADDING and grid_rect.end.y <= visible_rect.end.y - SELECTOR_SCREEN_PADDING:
+		var overflow := get_rect_screen_overflow(grid_rect, visible_rect.grow(-SELECTOR_SCREEN_PADDING))
+		if overflow < best_overflow:
+			best_overflow = overflow
+			best_columns = columns
+		if overflow <= 0.0:
 			break
 		columns += 1
-	return columns
+	return columns if columns <= slot_count else best_columns
+
+
+func get_rect_screen_overflow(rect: Rect2, visible_rect: Rect2) -> float:
+	var overflow := 0.0
+	overflow += maxf(visible_rect.position.x - rect.position.x, 0.0)
+	overflow += maxf(rect.end.x - visible_rect.end.x, 0.0)
+	overflow += maxf(visible_rect.position.y - rect.position.y, 0.0)
+	overflow += maxf(rect.end.y - visible_rect.end.y, 0.0)
+	return overflow
 
 
 func get_selector_slot_step(selected_slot: Sprite2D) -> Vector2:
@@ -432,6 +580,50 @@ func create_selector_slot_visual(
 	tracked_nodes.append(slot_visual)
 
 
+func handle_inventory_click() -> bool:
+	if is_player_in_zone:
+		var fridge_index := get_clicked_selector_index(active_selector, food_items.size())
+		if fridge_index >= 0:
+			current_index = fridge_index
+			update_visuals()
+			grab_item()
+			return true
+
+	if current_storage_id != NO_STORAGE_ID and external_storage_items.has(current_storage_id):
+		var slots: Array = external_storage_items[current_storage_id]
+		var storage_index := get_clicked_selector_index(active_storage_selector, slots.size())
+		if storage_index >= 0:
+			external_storage_indices[current_storage_id] = storage_index
+			update_external_storage_visual()
+			interact_with_external_storage()
+			return true
+
+	return false
+
+
+func get_clicked_selector_index(selector: Node2D, slot_count: int) -> int:
+	if slot_count <= 0 or not selector.visible:
+		return -1
+
+	var selected_slot := selector.get_node_or_null("selected") as Sprite2D
+	if not selected_slot:
+		return -1
+
+	var slot_step: Vector2 = get_selector_slot_step(selected_slot)
+	var columns: int = get_selector_grid_columns(selector, selected_slot.position, slot_count, slot_step)
+	var rows: int = ceili(float(slot_count) / float(columns))
+	var start_position: Vector2 = get_selector_grid_start_position(selected_slot.position, columns, rows, slot_step)
+	var local_mouse := selector.to_local(get_global_mouse_position())
+
+	for i in range(slot_count):
+		var slot_position: Vector2 = get_selector_grid_slot_position(start_position, i, columns, slot_step)
+		var slot_rect := Rect2(slot_position - slot_step * 0.5, slot_step)
+		if slot_rect.has_point(local_mouse):
+			return i
+
+	return -1
+
+
 func grab_item():
 	if food_items.is_empty():
 		return
@@ -449,8 +641,7 @@ func grab_item():
 
 	update_labels()
 	
-	# If this is the FIRST item taken from a full stack, start the loop
-	if item_counts[current_index] == max_item_count - 1:
+	if not item_restocking[current_index]:
 		restock_loop(current_index)
 
 
@@ -668,7 +859,7 @@ func ensure_meat_frames_exposed() -> void:
 	if fridge_menu_has_meat():
 		return
 
-	for frame in meat_frames:
+	for frame in FoodIconRules.MEAT_FRAMES:
 		if not fridge_menu.has(frame):
 			fridge_menu.append(frame)
 
@@ -681,11 +872,25 @@ func fridge_menu_has_meat() -> bool:
 
 
 func is_meat_frame(frame: int) -> bool:
-	return meat_frames.has(frame)
+	return FoodIconRules.is_meat_frame(frame)
+
+
+func can_order_cut(frame: int) -> bool:
+	return is_cuttable_frame(frame)
 
 
 func can_order_cooked(frame: int) -> bool:
+	if is_never_cook_frame(frame):
+		return false
 	return is_meat_frame(frame) or FoodIconRules.is_cookable_frame(frame)
+
+
+func is_cuttable_frame(frame: int) -> bool:
+	return FoodIconRules.is_cuttable_frame(frame)
+
+
+func is_never_cook_frame(frame: int) -> bool:
+	return FoodIconRules.is_never_cook_frame(frame)
 
 
 func update_order_timer(delta: float) -> void:
@@ -712,7 +917,7 @@ func create_order() -> void:
 		if not candidates.has(frame):
 			candidates.append(frame)
 	if candidates.is_empty():
-		for frame in meat_frames:
+		for frame in FoodIconRules.MEAT_FRAMES:
 			if not candidates.has(frame):
 				candidates.append(frame)
 	if candidates.is_empty():
@@ -733,9 +938,11 @@ func create_order() -> void:
 
 
 func create_order_item(frame: int, _order_index: int) -> Dictionary:
-	var cut_status := CUT_STATUS_CUT if order_rng.randi_range(0, 1) == 1 else CUT_STATUS_UNCUT
+	var cut_status := CUT_STATUS_UNCUT
+	if can_order_cut(frame) and order_rng.randi_range(0, 1) == 1:
+		cut_status = CUT_STATUS_CUT
 	var food_status := FOOD_ITEM_STATUS_SAFE
-	if is_meat_frame(frame):
+	if is_meat_frame(frame) and can_order_cooked(frame):
 		food_status = FOOD_ITEM_STATUS_COOKED
 	elif can_order_cooked(frame) and order_rng.randi_range(0, 1) == 1:
 		food_status = FOOD_ITEM_STATUS_COOKED
@@ -764,27 +971,40 @@ func update_coin_hud() -> void:
 
 
 func load_save_state() -> void:
-	if not FileAccess.file_exists(SAVE_STATE_PATH):
+	var save_path := get_local_save_state_path()
+	if not FileAccess.file_exists(save_path):
 		return
 
-	var text := FileAccess.get_file_as_string(SAVE_STATE_PATH)
+	var text := FileAccess.get_file_as_string(save_path)
 	var parsed = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 
-	coins = maxi(0, int(parsed.get("coins", 0)))
+	var core_save = parsed.get("core", {})
+	if typeof(core_save) == TYPE_DICTIONARY and core_save.has("coins"):
+		coins = maxi(0, int(core_save.get("coins", 0)))
+	elif parsed.has("coins"):
+		coins = maxi(0, int(parsed.get("coins", 0)))
 
 
 func save_state() -> void:
-	var file := FileAccess.open(SAVE_STATE_PATH, FileAccess.WRITE)
+	var file := FileAccess.open(get_local_save_state_path(), FileAccess.WRITE)
 	if file == null:
 		push_warning("Could not save game state.")
 		return
 
 	file.store_string(JSON.stringify({
-		"coins": coins,
+		"core": {
+			"coins": coins,
+		},
 	}))
 	file.close()
+
+
+func get_local_save_state_path() -> String:
+	if OS.has_feature("editor"):
+		return "res://%s" % SAVE_STATE_FILE_NAME
+	return "%s/%s" % [OS.get_executable_path().get_base_dir(), SAVE_STATE_FILE_NAME]
 
 
 func complete_order() -> void:
@@ -1111,6 +1331,8 @@ func interact_with_external_storage() -> void:
 func place_in_external_storage() -> void:
 	if held_item_is_spoiled:
 		return
+	if not can_place_held_item_in_external_storage(current_storage_id):
+		return
 
 	var slots: Array = external_storage_items[current_storage_id]
 	var slot_index: int = int(external_storage_indices.get(current_storage_id, 0))
@@ -1124,6 +1346,14 @@ func place_in_external_storage() -> void:
 	update_external_storage_visual()
 	hide_external_storage_preview(current_storage_id)
 	update_special_table_full_state()
+
+
+func can_place_held_item_in_external_storage(storage_id: String) -> bool:
+	if storage_id == OVEN_STORAGE_ID:
+		return can_order_cooked(held_item_frame)
+	if is_cutting_board_storage(storage_id):
+		return can_order_cut(held_item_frame)
+	return true
 
 
 func take_from_external_storage() -> void:
@@ -1199,8 +1429,9 @@ func create_external_storage_food_visual(frame: int, slot_position: Vector2, sto
 	var sprite := storage_food.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if sprite:
 		var food_status := get_external_storage_slot_string(external_storage_food_status, storage_id, slot_index, FOOD_ITEM_STATUS_SAFE)
+		var cut_status := get_external_storage_slot_string(external_storage_cut_status, storage_id, slot_index, CUT_STATUS_UNCUT)
 		set_food_base_frame(storage_food, frame)
-		update_food_display_frame(storage_food, food_status)
+		update_food_display_frame(storage_food, food_status, cut_status)
 
 	var label := storage_food.get_node_or_null("CountLabel")
 	if label:
@@ -1223,7 +1454,8 @@ func update_external_storage_preview(storage_id: String) -> void:
 
 	var anchor_cell: Vector2i = external_storage_positions[storage_id]
 	var food_status := get_external_storage_slot_string(external_storage_food_status, storage_id, slot_index, FOOD_ITEM_STATUS_SAFE)
-	var preview := create_counter_food_item(frame, anchor_cell, food_status)
+	var cut_status := get_external_storage_slot_string(external_storage_cut_status, storage_id, slot_index, CUT_STATUS_UNCUT)
+	var preview := create_counter_food_item(frame, anchor_cell, food_status, cut_status)
 	if storage_id == OVEN_STORAGE_ID:
 		preview.position.y += 16.0
 	apply_external_storage_prep_visuals(preview, storage_id, slot_index)
@@ -1270,7 +1502,7 @@ func place_counter_item():
 	if cell == NO_COUNTER_CELL:
 		return
 
-	var counter_food := create_counter_food_item(held_item_frame, cell, held_item_food_status)
+	var counter_food := create_counter_food_item(held_item_frame, cell, held_item_food_status, held_item_cut_status)
 	var prep_progress := held_item_prep_progress
 	counter_items[cell] = {
 		"frame": held_item_frame,
@@ -1406,14 +1638,14 @@ func is_blocked_counter_cell(cell: Vector2i) -> bool:
 	return items_tilemap.get_cell_atlas_coords(cell) == BLOCKED_ITEM_ATLAS
 
 
-func create_counter_food_item(frame: int, cell: Vector2i, food_status: String = FOOD_ITEM_STATUS_SAFE) -> Node2D:
+func create_counter_food_item(frame: int, cell: Vector2i, food_status: String = FOOD_ITEM_STATUS_SAFE, cut_status: String = CUT_STATUS_UNCUT) -> Node2D:
 	var counter_food := food_scene.instantiate() as Node2D
 	add_child(counter_food)
 
 	var sprite := counter_food.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if sprite:
 		set_food_base_frame(counter_food, frame)
-		update_food_display_frame(counter_food, food_status)
+		update_food_display_frame(counter_food, food_status, cut_status)
 
 	var label := counter_food.get_node_or_null("CountLabel")
 	if label:
@@ -1669,12 +1901,12 @@ func update_food_state_timers(delta: float) -> void:
 			if int(slots[i]) < 0:
 				continue
 
-			if is_cutting_board_storage(storage_id_string) and float(prep_progress[i]) >= 0.0 and float(prep_progress[i]) < 100.0:
+			if is_cutting_board_storage(storage_id_string) and is_cuttable_frame(int(slots[i])) and float(prep_progress[i]) >= 0.0 and float(prep_progress[i]) < 100.0:
 				prep_progress[i] = minf(100.0, float(prep_progress[i]) + cutting_progress_per_second * delta)
 				if storage_id_string == current_storage_id:
 					should_refresh_active_storage = true
 
-			if storage_id_string == OVEN_STORAGE_ID and float(oven_progress[i]) >= 0.0 and float(oven_progress[i]) < 100.0:
+			if storage_id_string == OVEN_STORAGE_ID and can_order_cooked(int(slots[i])) and float(oven_progress[i]) >= 0.0 and float(oven_progress[i]) < 100.0:
 				oven_progress[i] = minf(100.0, float(oven_progress[i]) + oven_progress_per_second * delta)
 				if storage_id_string == current_storage_id:
 					should_refresh_active_storage = true
@@ -1732,7 +1964,7 @@ func apply_external_storage_prep_visuals(food_node: Node, storage_id: String, sl
 
 
 func apply_food_state_visuals(food_node: Node, prep_progress: float, oven_progress: float, is_spoiled: bool) -> void:
-	update_food_display_frame(food_node, get_food_status_from_state(oven_progress, is_spoiled))
+	update_food_display_frame(food_node, get_food_status_from_state(oven_progress, is_spoiled), get_cut_status_from_prep_progress(prep_progress))
 
 	var status_icon := food_node.get_node_or_null(FOOD_STATUS_ICON_NAME) as AnimatedSprite2D
 	if status_icon:
@@ -1767,13 +1999,13 @@ func set_food_base_frame(food_node: Node, frame: int) -> void:
 	food_node.set_meta("base_frame", frame)
 
 
-func update_food_display_frame(food_node: Node, food_status: String) -> void:
+func update_food_display_frame(food_node: Node, food_status: String, cut_status: String = CUT_STATUS_UNCUT) -> void:
 	var sprite := food_node.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if sprite == null:
 		return
 
 	var base_frame := int(food_node.get_meta("base_frame", sprite.frame))
-	sprite.frame = FoodIconRules.display_frame(base_frame, food_status)
+	sprite.frame = FoodIconRules.display_frame(base_frame, food_status, cut_status)
 
 
 func update_food_progress_fill(progress_bar: ProgressBar, fill_color: Color) -> void:
@@ -1822,7 +2054,7 @@ func update_held_item_hud() -> void:
 	refresh_held_item_status()
 
 	if hud_node.has_method("set_item_state"):
-		hud_node.call("set_item_state", held_item_frame, held_item_prep_progress, held_item_oven_progress, held_item_is_spoiled)
+		hud_node.call("set_item_state", held_item_frame, held_item_prep_progress, held_item_oven_progress, held_item_is_spoiled, held_item_cut_status)
 	elif hud_node.has_method("set_item"):
 		hud_node.call("set_item", held_item_frame)
 
@@ -1840,6 +2072,7 @@ func clear_inventory():
 
 # --- NEW: Continuous Queue Logic ---
 func restock_loop(index: int):
+	item_restocking[index] = true
 	# Keep looping and refilling as long as we are below max capacity
 	while item_counts[index] < max_item_count:
 		var sprite = food_items[index].get_node("AnimatedSprite2D")
@@ -1856,3 +2089,4 @@ func restock_loop(index: int):
 		# Add 1 to inventory and refresh the UI numbers
 		item_counts[index] += 1
 		update_labels()
+	item_restocking[index] = false
