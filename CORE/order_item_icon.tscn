@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" uid="uid://bp0k5qo5fu25b" path="res://CORE/order_item_icon.gd" id="1_7c8vl"]
+
+[node name="OrderItemIcon" type="Control"]
+custom_minimum_size = Vector2(42, 42)
+script = ExtResource("1_7c8vl")
+
+[node name="ItemIcon" type="TextureRect" parent="."]
+offset_left = 3.0
+offset_top = 3.0
+offset_right = 35.0
+offset_bottom = 35.0
+expand_mode = 1
+stretch_mode = 5
+
+[node name="StatusBadge" type="TextureRect" parent="."]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 38.0
+offset_bottom = 38.0
+expand_mode = 1
+stretch_mode = 5

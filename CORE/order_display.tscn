@@ -1,0 +1,40 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://buqr60fr2robk" path="res://CORE/order_display.gd" id="1_hf0n5"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_order_panel"]
+bg_color = Color(0.05, 0.05, 0.05, 0.72)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 0.76, 0.28, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 6.0
+content_margin_top = 4.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+
+[node name="OrderDisplay" type="PanelContainer"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 160.0
+offset_bottom = 70.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_order_panel")
+script = ExtResource("1_hf0n5")
+
+[node name="Content" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Title" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+text = "Order"
+
+[node name="Items" type="HBoxContainer" parent="Content"]
+layout_mode = 2
+theme_override_constants/separation = 6

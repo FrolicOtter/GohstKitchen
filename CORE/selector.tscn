@@ -1,0 +1,31 @@
+[gd_scene load_steps=4 format=3 uid="uid://dsffuocly404g"]
+
+[ext_resource type="Texture2D" uid="uid://cv4i1s1043bmu" path="res://CORE/UI_Flat_IconPlay01c.png" id="1_f82ba"]
+[ext_resource type="Texture2D" uid="uid://dok1h8qvn63rk" path="res://CORE/UI_Flat_Frame02a.png" id="1_pl5vu"]
+[ext_resource type="Texture2D" uid="uid://di1tkldqibpj5" path="res://CORE/UI_Flat_Select02a_3.png" id="2_pl5vu"]
+
+[node name="Node2D2" type="Node2D"]
+texture_filter = 1
+
+[node name="background" type="Sprite2D" parent="."]
+z_index = -20
+texture_filter = 1
+texture = ExtResource("1_pl5vu")
+
+[node name="right" type="Sprite2D" parent="."]
+texture_filter = 1
+position = Vector2(28, 8)
+texture = ExtResource("1_f82ba")
+
+[node name="left" type="Sprite2D" parent="."]
+texture_filter = 1
+position = Vector2(4, 8)
+texture = ExtResource("1_f82ba")
+flip_h = true
+
+[node name="selected" type="Sprite2D" parent="."]
+visible = false
+texture_filter = 1
+position = Vector2(16, 8)
+scale = Vector2(0.5, 0.5)
+texture = ExtResource("2_pl5vu")
