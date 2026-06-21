@@ -26,7 +26,7 @@ func setup(frame: int, cut_status: String, food_status: String) -> void:
 	if status_texture == null:
 		status_texture = load(CorePaths.path("Prep Icons.png")) as Texture2D
 
-	item_icon.texture = _make_icon_texture(frame)
+	item_icon.texture = _make_icon_texture(FoodIconRules.display_frame(frame, food_status))
 	status_badge.texture = _make_status_texture(FOOD_STATUS_KNIFE_FRAME if cut_status == CUT_STATUS_CUT else FOOD_STATUS_DEFAULT_FRAME)
 	status_badge.modulate = _get_food_status_color(food_status)
 

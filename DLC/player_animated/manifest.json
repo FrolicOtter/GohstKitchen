@@ -1,0 +1,10 @@
+{
+  "name": "Animated Player",
+  "description": "Adds directional idle and walking animations for the player.",
+  "version": "1.0",
+  "upcoming": false,
+  "dependencies": [],
+  "pck_files": [
+    "player_animated.pck"
+  ]
+}

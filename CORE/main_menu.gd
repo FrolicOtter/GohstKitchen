@@ -478,10 +478,19 @@ func _create_dlc_row(dlc: Dictionary, selectable: bool) -> Control:
 	layout.add_child(header)
 
 	var name := Label.new()
-	name.text = "%s  v%s" % [dlc.get("name", "Unnamed DLC"), dlc.get("version", "unknown")]
+	name.text = str(dlc.get("name", "Unnamed DLC"))
 	name.add_theme_font_size_override("font_size", 18)
-	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(name)
+
+	var version := RichTextLabel.new()
+	version.bbcode_enabled = true
+	version.fit_content = true
+	version.scroll_active = false
+	version.text = "[i]%s[/i]" % _get_dlc_version_display(dlc)
+	version.add_theme_font_size_override("normal_font_size", 18)
+	version.add_theme_font_size_override("italics_font_size", 18)
+	version.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(version)
 
 	if bool(dlc.get("upcoming", false)):
 		var upcoming_label := Label.new()
@@ -505,6 +514,15 @@ func _create_dlc_row(dlc: Dictionary, selectable: bool) -> Control:
 	layout.add_child(description)
 
 	return row
+
+
+func _get_dlc_version_display(dlc: Dictionary) -> String:
+	var version := str(dlc.get("version", "unknown"))
+	if version.is_empty():
+		return ""
+	if bool(dlc.get("upcoming", false)) or version.to_lower() == "upcoming":
+		return version
+	return "v%s" % version
 
 
 func _select_available_dlc(dlc: Dictionary) -> void:

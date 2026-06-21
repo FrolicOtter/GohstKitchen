@@ -1,0 +1,8 @@
+; Temporary project used to export this DLC pack.
+
+config_version=5
+
+[application]
+
+config/name="Animated Player DLC"
+config/features=PackedStringArray("4.5")

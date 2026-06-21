@@ -81,19 +81,15 @@ func set_item(frame: int) -> void:
 
 func set_item_state(frame: int, prep_progress: float, oven_progress: float, is_spoiled: bool) -> void:
 	held_frame = frame
+	var food_status := _get_food_status_from_state(oven_progress, is_spoiled)
 
 	if slot_icon:
-		slot_icon.texture = _make_icon_texture(frame)
+		slot_icon.texture = _make_icon_texture(FoodIconRules.display_frame(frame, food_status))
 		slot_icon.show()
 
 	if status_icon:
 		status_icon.texture = _make_status_texture(FOOD_STATUS_KNIFE_FRAME if prep_progress >= 100.0 else FOOD_STATUS_DEFAULT_FRAME)
-		if is_spoiled:
-			status_icon.modulate = FOOD_STATUS_SPOILED_COLOR
-		elif oven_progress >= 100.0:
-			status_icon.modulate = FOOD_STATUS_COOKED_COLOR
-		else:
-			status_icon.modulate = FOOD_STATUS_NORMAL_COLOR
+		status_icon.modulate = _get_food_status_color(food_status)
 		status_icon.show()
 
 
@@ -134,6 +130,14 @@ func _get_food_status_color(food_status: String) -> Color:
 	if food_status == FOOD_ITEM_STATUS_COOKED:
 		return FOOD_STATUS_COOKED_COLOR
 	return FOOD_STATUS_NORMAL_COLOR
+
+
+func _get_food_status_from_state(oven_progress: float, is_spoiled: bool) -> String:
+	if is_spoiled:
+		return FOOD_ITEM_STATUS_EXPIRED
+	if oven_progress >= 100.0:
+		return FOOD_ITEM_STATUS_COOKED
+	return "safe"
 
 
 func _make_icon_texture(frame: int) -> AtlasTexture:

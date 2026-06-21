@@ -16,6 +16,7 @@ extends Node2D
 @export var hud_node: Node
 
 const WRONG_ORDER_TEXTURE_PATH := "Complete_UI_Essential_Pack_Free/01_Flat_Theme/Sprites/UI_Flat_IconCross01a.png"
+const SAVE_STATE_PATH := "user://save_state.json"
 
 # --- NEW: Capacity and Timer Settings ---
 @export var max_item_count: int = 3
@@ -125,6 +126,7 @@ const BANNED_COUNTER_CELLS: Array[Vector2i] = [
 
 func _ready():
 	order_rng.randomize()
+	load_save_state()
 	wrong_order_texture = load(CorePaths.path(WRONG_ORDER_TEXTURE_PATH)) as Texture2D
 	ensure_meat_frames_exposed()
 
@@ -682,6 +684,10 @@ func is_meat_frame(frame: int) -> bool:
 	return meat_frames.has(frame)
 
 
+func can_order_cooked(frame: int) -> bool:
+	return is_meat_frame(frame) or FoodIconRules.is_cookable_frame(frame)
+
+
 func update_order_timer(delta: float) -> void:
 	if not active_order.is_empty():
 		active_order_elapsed_time += delta
@@ -728,11 +734,11 @@ func create_order() -> void:
 
 func create_order_item(frame: int, _order_index: int) -> Dictionary:
 	var cut_status := CUT_STATUS_CUT if order_rng.randi_range(0, 1) == 1 else CUT_STATUS_UNCUT
-	var food_status := FOOD_ITEM_STATUS_COOKED if order_rng.randi_range(0, 1) == 1 else FOOD_ITEM_STATUS_SAFE
+	var food_status := FOOD_ITEM_STATUS_SAFE
 	if is_meat_frame(frame):
 		food_status = FOOD_ITEM_STATUS_COOKED
-	if food_status == FOOD_ITEM_STATUS_EXPIRED:
-		food_status = FOOD_ITEM_STATUS_SAFE
+	elif can_order_cooked(frame) and order_rng.randi_range(0, 1) == 1:
+		food_status = FOOD_ITEM_STATUS_COOKED
 
 	return {
 		"frame": frame,
@@ -757,9 +763,34 @@ func update_coin_hud() -> void:
 		hud_node.call("set_coins", coins)
 
 
+func load_save_state() -> void:
+	if not FileAccess.file_exists(SAVE_STATE_PATH):
+		return
+
+	var text := FileAccess.get_file_as_string(SAVE_STATE_PATH)
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+
+	coins = maxi(0, int(parsed.get("coins", 0)))
+
+
+func save_state() -> void:
+	var file := FileAccess.open(SAVE_STATE_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("Could not save game state.")
+		return
+
+	file.store_string(JSON.stringify({
+		"coins": coins,
+	}))
+	file.close()
+
+
 func complete_order() -> void:
 	var reward := calculate_order_reward()
 	coins += reward
+	save_state()
 	print("Order complete: ", active_order)
 	print("Coins earned: ", reward, " Total coins: ", coins)
 	active_order.clear()
@@ -1167,7 +1198,9 @@ func create_external_storage_food_visual(frame: int, slot_position: Vector2, sto
 
 	var sprite := storage_food.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if sprite:
-		sprite.frame = frame
+		var food_status := get_external_storage_slot_string(external_storage_food_status, storage_id, slot_index, FOOD_ITEM_STATUS_SAFE)
+		set_food_base_frame(storage_food, frame)
+		update_food_display_frame(storage_food, food_status)
 
 	var label := storage_food.get_node_or_null("CountLabel")
 	if label:
@@ -1189,7 +1222,8 @@ func update_external_storage_preview(storage_id: String) -> void:
 	var frame := int(slots[slot_index])
 
 	var anchor_cell: Vector2i = external_storage_positions[storage_id]
-	var preview := create_counter_food_item(frame, anchor_cell)
+	var food_status := get_external_storage_slot_string(external_storage_food_status, storage_id, slot_index, FOOD_ITEM_STATUS_SAFE)
+	var preview := create_counter_food_item(frame, anchor_cell, food_status)
 	if storage_id == OVEN_STORAGE_ID:
 		preview.position.y += 16.0
 	apply_external_storage_prep_visuals(preview, storage_id, slot_index)
@@ -1236,7 +1270,7 @@ func place_counter_item():
 	if cell == NO_COUNTER_CELL:
 		return
 
-	var counter_food := create_counter_food_item(held_item_frame, cell)
+	var counter_food := create_counter_food_item(held_item_frame, cell, held_item_food_status)
 	var prep_progress := held_item_prep_progress
 	counter_items[cell] = {
 		"frame": held_item_frame,
@@ -1372,13 +1406,14 @@ func is_blocked_counter_cell(cell: Vector2i) -> bool:
 	return items_tilemap.get_cell_atlas_coords(cell) == BLOCKED_ITEM_ATLAS
 
 
-func create_counter_food_item(frame: int, cell: Vector2i) -> Node2D:
+func create_counter_food_item(frame: int, cell: Vector2i, food_status: String = FOOD_ITEM_STATUS_SAFE) -> Node2D:
 	var counter_food := food_scene.instantiate() as Node2D
 	add_child(counter_food)
 
 	var sprite := counter_food.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if sprite:
-		sprite.frame = frame
+		set_food_base_frame(counter_food, frame)
+		update_food_display_frame(counter_food, food_status)
 
 	var label := counter_food.get_node_or_null("CountLabel")
 	if label:
@@ -1697,6 +1732,8 @@ func apply_external_storage_prep_visuals(food_node: Node, storage_id: String, sl
 
 
 func apply_food_state_visuals(food_node: Node, prep_progress: float, oven_progress: float, is_spoiled: bool) -> void:
+	update_food_display_frame(food_node, get_food_status_from_state(oven_progress, is_spoiled))
+
 	var status_icon := food_node.get_node_or_null(FOOD_STATUS_ICON_NAME) as AnimatedSprite2D
 	if status_icon:
 		status_icon.stop()
@@ -1724,6 +1761,19 @@ func apply_food_state_visuals(food_node: Node, prep_progress: float, oven_progre
 		update_food_progress_fill(progress_bar, active_color)
 		progress_bar.value = clampf(active_progress, 0.0, 100.0)
 		progress_bar.visible = active_progress < 100.0
+
+
+func set_food_base_frame(food_node: Node, frame: int) -> void:
+	food_node.set_meta("base_frame", frame)
+
+
+func update_food_display_frame(food_node: Node, food_status: String) -> void:
+	var sprite := food_node.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+	if sprite == null:
+		return
+
+	var base_frame := int(food_node.get_meta("base_frame", sprite.frame))
+	sprite.frame = FoodIconRules.display_frame(base_frame, food_status)
 
 
 func update_food_progress_fill(progress_bar: ProgressBar, fill_color: Color) -> void:
